@@ -605,10 +605,13 @@ function getExportRows() {
 }
 
 async function exportCsv() {
+  syncVisibleLedgerInputs();
   const rows = getExportRows();
   const csv = rows.map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(",")).join("\n");
   const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
-  const suggestedName = `투자_및_자산현황_${new Date().toISOString().slice(0, 10)}.csv`;
+  const now = new Date();
+  const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}_${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
+  const suggestedName = `투자_및_자산현황_${timestamp}.csv`;
 
   if ("showSaveFilePicker" in window) {
     try {
@@ -653,6 +656,7 @@ async function pushToSheets() {
   const url = getSheetsUrl();
   if (!url) return;
 
+  syncVisibleLedgerInputs();
   setSheetsStatus("Google Sheets로 저장하는 중입니다...");
   try {
     const body = new URLSearchParams({
@@ -759,6 +763,29 @@ function addQueryParams(url, params) {
   const parsed = new URL(url);
   Object.entries(params).forEach(([key, value]) => parsed.searchParams.set(key, value));
   return parsed.toString();
+}
+
+function syncVisibleLedgerInputs() {
+  let changed = false;
+  ledgerBody.querySelectorAll("[data-field]").forEach((input) => {
+    const account = currentMonth().accounts[Number(input.dataset.index)];
+    if (!account) return;
+
+    const field = input.dataset.field;
+    const nextValue = field === "name" || field === "type" ? input.value.trim() || account[field] : readInputNumber(input.value);
+
+    if (account[field] !== nextValue) {
+      account[field] = nextValue;
+      changed = true;
+    }
+  });
+
+  if (changed) {
+    state.activeYearIndex = activeYearIndex;
+    state.activeMonthIndex = activeMonthIndex;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    render();
+  }
 }
 
 function importCsv(event) {
