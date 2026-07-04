@@ -163,6 +163,24 @@
             </label>
           </div>
         </div>
+        <div class="sheet-sync">
+          <div>
+            <h3>Google Sheets 동기화</h3>
+            <p class="section-note">Google Apps Script 웹앱 주소를 저장하면 여러 기기에서 같은 시트 데이터를 불러오고 저장할 수 있습니다.</p>
+          </div>
+          <div class="sheet-sync-controls">
+            <label>
+              웹앱 주소
+              <input id="sheetsWebAppUrl" type="url" placeholder="https://script.google.com/macros/s/..." />
+            </label>
+            <div class="sheet-sync-actions">
+              <button id="saveSheetsUrlBtn" class="secondary-button" type="button">주소 저장</button>
+              <button id="pullSheetsBtn" class="secondary-button" type="button">시트에서 불러오기</button>
+              <button id="pushSheetsBtn" class="primary-button" type="button">시트로 저장</button>
+            </div>
+          </div>
+          <p id="sheetsSyncStatus" class="sync-status" aria-live="polite"></p>
+        </div>
       </section>
 
     </main>

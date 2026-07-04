@@ -1,4 +1,5 @@
 const STORAGE_KEY = "portfolio-ledger-yearly-v3";
+const SHEETS_SYNC_URL_KEY = "portfolio-ledger-sheets-web-app-url";
 const MONTH_COUNT = 12;
 const accountTypes = ["투자", "현금", "연금", "코인", "보험", "부채", "기타"];
 const colors = ["#24765a", "#3b73a3", "#d59b2f", "#c25f4f", "#6d63a6", "#4d8e86", "#8b7355", "#9a4f68"];
@@ -113,6 +114,12 @@ document.querySelector("#entryForm").addEventListener("submit", (event) => {
 document.querySelector("#backupCsvBtn").addEventListener("click", exportCsv);
 document.querySelector("#undoBtn").addEventListener("click", undoLastChange);
 document.querySelector("#restoreCsvInput").addEventListener("change", importCsv);
+document.querySelector("#saveSheetsUrlBtn").addEventListener("click", saveSheetsUrl);
+document.querySelector("#pullSheetsBtn").addEventListener("click", pullFromSheets);
+document.querySelector("#pushSheetsBtn").addEventListener("click", pushToSheets);
+
+const sheetsUrlInput = document.querySelector("#sheetsWebAppUrl");
+sheetsUrlInput.value = localStorage.getItem(SHEETS_SYNC_URL_KEY) || "";
 
 document.querySelectorAll(".money-entry").forEach((input) => {
   input.addEventListener("blur", () => {
@@ -574,7 +581,7 @@ function getReturnRate(account) {
   return principal ? getProfit(account) / principal : 0;
 }
 
-async function exportCsv() {
+function getExportRows() {
   const rows = [["연도", "월", "구분", "분류", "원금", "평가금", "평가손익", "수익률", "연간수익", "입출금"]];
   state.years.forEach((year) => {
     year.months.forEach((month, monthIndex) => {
@@ -594,7 +601,11 @@ async function exportCsv() {
       });
     });
   });
+  return rows;
+}
 
+async function exportCsv() {
+  const rows = getExportRows();
   const csv = rows.map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(",")).join("\n");
   const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
   const suggestedName = `투자_및_자산현황_${new Date().toISOString().slice(0, 10)}.csv`;
@@ -625,6 +636,129 @@ async function exportCsv() {
   link.download = suggestedName;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+function saveSheetsUrl() {
+  const url = getSheetsUrlFromInput();
+  if (!url) {
+    setSheetsStatus("Google Apps Script 웹앱 주소를 먼저 입력하세요.");
+    return;
+  }
+  localStorage.setItem(SHEETS_SYNC_URL_KEY, url);
+  sheetsUrlInput.value = url;
+  setSheetsStatus("웹앱 주소를 저장했습니다.");
+}
+
+async function pushToSheets() {
+  const url = getSheetsUrl();
+  if (!url) return;
+
+  setSheetsStatus("Google Sheets로 저장하는 중입니다...");
+  try {
+    const body = new URLSearchParams({
+      action: "save",
+      payload: JSON.stringify({ rows: getExportRows() }),
+    });
+
+    await fetch(url, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+      body,
+    });
+
+    setSheetsStatus("저장 요청을 보냈습니다. 다른 기기에서는 '시트에서 불러오기'를 누르세요.");
+  } catch (error) {
+    setSheetsStatus(`시트 저장 실패: ${error.message}`);
+  }
+}
+
+async function pullFromSheets() {
+  const url = getSheetsUrl();
+  if (!url) return;
+
+  setSheetsStatus("Google Sheets에서 불러오는 중입니다...");
+  try {
+    const result = await loadSheetsRows(url);
+    const rows = result.rows || result;
+    if (!Array.isArray(rows)) throw new Error("시트 응답에서 행 데이터를 찾지 못했습니다.");
+
+    const imported = stateFromCsv(rows);
+    if (!imported.years.length) throw new Error("시트 안에서 불러올 자산 데이터를 찾지 못했습니다.");
+
+    pushUndoState();
+    state = imported;
+    activeYearIndex = 0;
+    activeMonthIndex = getLastUpdatedMonthIndex(currentYear());
+    saveAndRender();
+    setSheetsStatus("Google Sheets 데이터를 불러왔습니다.");
+  } catch (error) {
+    setSheetsStatus(`시트 불러오기 실패: ${error.message}`);
+  }
+}
+
+async function loadSheetsRows(url) {
+  const readUrl = addQueryParams(url, { action: "read", t: Date.now() });
+  try {
+    const response = await fetch(readUrl);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json();
+  } catch {
+    return loadSheetsRowsByJsonp(url);
+  }
+}
+
+function loadSheetsRowsByJsonp(url) {
+  return new Promise((resolve, reject) => {
+    const callbackName = `receiveSheetsRows_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const script = document.createElement("script");
+    const timeout = window.setTimeout(() => {
+      cleanup();
+      reject(new Error("응답 시간이 초과되었습니다."));
+    }, 15000);
+
+    function cleanup() {
+      window.clearTimeout(timeout);
+      delete window[callbackName];
+      script.remove();
+    }
+
+    window[callbackName] = (data) => {
+      cleanup();
+      resolve(data);
+    };
+
+    script.onerror = () => {
+      cleanup();
+      reject(new Error("Google Apps Script 주소를 불러오지 못했습니다."));
+    };
+    script.src = addQueryParams(url, { action: "read", callback: callbackName, t: Date.now() });
+    document.body.appendChild(script);
+  });
+}
+
+function getSheetsUrl() {
+  const url = getSheetsUrlFromInput();
+  if (!url) {
+    setSheetsStatus("Google Apps Script 웹앱 주소를 먼저 입력하세요.");
+    return "";
+  }
+  localStorage.setItem(SHEETS_SYNC_URL_KEY, url);
+  return url;
+}
+
+function getSheetsUrlFromInput() {
+  return sheetsUrlInput.value.trim();
+}
+
+function setSheetsStatus(message) {
+  document.querySelector("#sheetsSyncStatus").textContent = message;
+}
+
+function addQueryParams(url, params) {
+  const parsed = new URL(url);
+  Object.entries(params).forEach(([key, value]) => parsed.searchParams.set(key, value));
+  return parsed.toString();
 }
 
 function importCsv(event) {
