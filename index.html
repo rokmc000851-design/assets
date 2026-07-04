@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>투자 및 자산현황</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p id="yearEyebrow" class="eyebrow">2026 Portfolio Ledger</p>
+          <h1>투자 및 자산현황</h1>
+        </div>
+        <div class="topbar-actions">
+          <button id="undoBtn" class="ghost-button" type="button" disabled>실행취소</button>
+          <button id="addMonthBtn" class="secondary-button" type="button">다음 업데이트 월 추가</button>
+          <button id="addYearBtn" class="secondary-button" type="button">다음 연도 추가</button>
+        </div>
+      </header>
+
+      <nav id="yearTabs" class="year-tabs" aria-label="연도 선택"></nav>
+      <nav id="monthTabs" class="month-tabs" aria-label="월 선택"></nav>
+
+      <section class="summary-grid" aria-label="요약">
+        <article class="metric">
+          <span id="principalMetricLabel">총 원금</span>
+          <strong id="totalPrincipal">0원</strong>
+        </article>
+        <article class="metric net">
+          <span id="valuationMetricLabel">총 평가금</span>
+          <strong id="totalValuation">0원</strong>
+        </article>
+        <article class="metric">
+          <span>평가손익</span>
+          <strong id="totalProfit">0원</strong>
+        </article>
+        <article class="metric">
+          <span>수익률</span>
+          <strong id="totalReturn">0%</strong>
+        </article>
+        <article class="metric">
+          <span>연간수익</span>
+          <strong id="ytdProfit">0원</strong>
+        </article>
+        <article class="metric">
+          <span>입출금</span>
+          <strong id="cashflowTotal">0원</strong>
+        </article>
+      </section>
+
+      <section class="workspace">
+        <section class="panel allocation-panel" aria-labelledby="allocationTitle">
+          <div class="panel-heading">
+            <h2 id="allocationTitle">자산 비중</h2>
+            <span id="selectedMonthLabel" class="subtle"></span>
+          </div>
+          <div class="chart-layout">
+            <canvas id="allocationChart" width="280" height="280" aria-label="자산 비중 차트"></canvas>
+            <div id="allocationLegend" class="legend"></div>
+          </div>
+        </section>
+
+        <section class="panel trend-panel" aria-labelledby="trendTitle">
+          <div class="panel-heading">
+            <h2 id="trendTitle">월별 총 평가금</h2>
+            <span id="trendCaption" class="subtle">12월까지 표시, 마지막 업데이트 월까지 누적</span>
+          </div>
+          <canvas id="trendChart" width="780" height="340" aria-label="월별 총 평가금 누적 막대그래프"></canvas>
+        </section>
+      </section>
+
+      <section class="table-section" aria-labelledby="ledgerTitle">
+        <div class="section-heading">
+          <div>
+            <h2 id="ledgerTitle">월별 자산현황표</h2>
+            <p class="section-note">원금, 평가금, 입출금을 수정하면 평가손익과 수익률이 자동 계산됩니다.</p>
+          </div>
+          <button id="addAccountBtn" class="secondary-button" type="button">계좌 추가</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>구분</th>
+                <th>분류</th>
+                <th>원금</th>
+                <th>평가금</th>
+                <th>평가손익</th>
+                <th>수익률</th>
+                <th>연간수익</th>
+                <th>입출금</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="ledgerBody"></tbody>
+            <tfoot>
+              <tr>
+                <th colspan="2">합계</th>
+                <th id="footerPrincipal">0원</th>
+                <th id="footerValuation">0원</th>
+                <th id="footerProfit">0원</th>
+                <th id="footerReturn">0%</th>
+                <th id="footerYtd">0원</th>
+                <th id="footerCashflow">0원</th>
+                <th></th>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </section>
+
+      <section id="quickEntrySection" class="editor-section hidden" aria-labelledby="editorTitle">
+        <div class="section-heading">
+          <h2 id="editorTitle">빠른 입력</h2>
+          <span class="subtle">새 항목은 현재 선택된 월에 추가됩니다.</span>
+        </div>
+        <form id="entryForm" class="entry-form">
+          <label>
+            구분
+            <input id="nameInput" type="text" placeholder="예: 주식, CMA, 마통" required />
+          </label>
+          <label>
+            분류
+            <select id="typeInput">
+              <option value="투자">투자</option>
+              <option value="현금">현금</option>
+              <option value="연금">연금</option>
+              <option value="코인">코인</option>
+              <option value="보험">보험</option>
+              <option value="부채">부채</option>
+              <option value="기타">기타</option>
+            </select>
+          </label>
+          <label>
+            원금
+            <input id="principalInput" class="number-input money-entry" type="text" inputmode="numeric" placeholder="₩0" />
+          </label>
+          <label>
+            평가금
+            <input id="valuationInput" class="number-input money-entry" type="text" inputmode="numeric" placeholder="₩0" />
+          </label>
+          <label>
+            입출금
+            <input id="cashflowInput" class="number-input money-entry" type="text" inputmode="numeric" placeholder="₩0" />
+          </label>
+          <button class="primary-button" type="submit">추가</button>
+        </form>
+      </section>
+
+      <section class="backup-section" aria-labelledby="backupTitle">
+        <div class="section-heading">
+          <div>
+            <h2 id="backupTitle">백업 / 복원</h2>
+            <p class="section-note">CSV로 현재 데이터를 저장하거나, 이전에 저장한 CSV를 다시 불러옵니다.</p>
+          </div>
+          <div class="backup-actions">
+            <button id="backupCsvBtn" class="secondary-button" type="button">CSV 저장</button>
+            <label class="file-button">
+              CSV 불러오기
+              <input id="restoreCsvInput" type="file" accept=".csv,text/csv" />
+            </label>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
