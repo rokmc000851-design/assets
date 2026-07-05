@@ -65,9 +65,18 @@
         <section class="panel trend-panel" aria-labelledby="trendTitle">
           <div class="panel-heading">
             <h2 id="trendTitle">월별 총 평가금</h2>
-            <span id="trendCaption" class="subtle">12월까지 표시, 마지막 업데이트 월까지 누적</span>
+            <div class="trend-tools">
+              <label>
+                그래프 항목
+                <select id="trendAccountFilter" aria-label="누적막대그래프 항목 선택">
+                  <option value="__all__">전체</option>
+                </select>
+              </label>
+              <span id="trendCaption" class="subtle">12월까지 표시, 마지막 업데이트 월까지 누적</span>
+            </div>
           </div>
           <canvas id="trendChart" width="780" height="340" aria-label="월별 총 평가금 누적 막대그래프"></canvas>
+          <div id="trendTooltip" class="chart-tooltip hidden" role="status"></div>
         </section>
       </section>
 
@@ -108,6 +117,58 @@
               </tr>
             </tfoot>
           </table>
+        </div>
+      </section>
+
+      <section class="living-section" aria-labelledby="livingTitle">
+        <div class="section-heading">
+          <div>
+            <h2 id="livingTitle">캐나다 생활비</h2>
+            <p class="section-note">선택한 월 기준으로 식비, 생활비, 기타, 한국 월수입과 카드값을 관리합니다.</p>
+          </div>
+          <strong id="livingSelectedMonth" class="subtle"></strong>
+        </div>
+        <div class="living-grid">
+          <label>
+            식비
+            <input id="livingFoodInput" class="number-input living-input" data-living-field="food" type="text" inputmode="numeric" placeholder="₩0" />
+          </label>
+          <label>
+            생활비
+            <input id="livingCostInput" class="number-input living-input" data-living-field="living" type="text" inputmode="numeric" placeholder="₩0" />
+          </label>
+          <label>
+            기타
+            <input id="livingOtherInput" class="number-input living-input" data-living-field="other" type="text" inputmode="numeric" placeholder="₩0" />
+          </label>
+          <article class="living-total">
+            <span>총합</span>
+            <strong id="livingTotal">₩0</strong>
+          </article>
+          <label>
+            한국 월수입
+            <input id="koreanIncomeInput" class="number-input living-input" data-living-field="koreanIncome" type="text" inputmode="numeric" placeholder="₩0" />
+          </label>
+          <label>
+            카드값
+            <input id="cardPaymentInput" class="number-input living-input" data-living-field="cardPayment" type="text" inputmode="numeric" placeholder="₩0" />
+          </label>
+        </div>
+        <div class="living-charts">
+          <section class="living-chart-panel" aria-labelledby="canadaLivingChartTitle">
+            <div class="panel-heading compact-heading">
+              <h3 id="canadaLivingChartTitle">캐나다 생활비 추이</h3>
+              <span class="subtle">식비 / 생활비 / 기타</span>
+            </div>
+            <canvas id="canadaLivingChart" width="560" height="260" aria-label="캐나다 생활비 월별 누적막대그래프"></canvas>
+          </section>
+          <section class="living-chart-panel" aria-labelledby="koreaLivingChartTitle">
+            <div class="panel-heading compact-heading">
+              <h3 id="koreaLivingChartTitle">한국 생활비 추이</h3>
+              <span class="subtle">월수입 / 카드값</span>
+            </div>
+            <canvas id="koreaLivingChart" width="560" height="260" aria-label="한국 생활비 월별 누적막대그래프"></canvas>
+          </section>
         </div>
       </section>
 

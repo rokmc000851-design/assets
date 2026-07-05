@@ -4,6 +4,15 @@ const MONTH_COUNT = 12;
 const accountTypes = ["투자", "현금", "연금", "코인", "보험", "부채", "기타"];
 const colors = ["#24765a", "#3b73a3", "#d59b2f", "#c25f4f", "#6d63a6", "#4d8e86", "#8b7355", "#9a4f68"];
 const debtColor = "#b85a4b";
+const livingColors = {
+  food: "#3b73a3",
+  living: "#24765a",
+  other: "#d59b2f",
+  koreanIncome: "#285f90",
+  cardPayment: "#c25f4f",
+};
+const ALL_TREND_ACCOUNTS = "__all__";
+const livingExpenseFields = ["food", "living", "other", "koreanIncome", "cardPayment"];
 
 const seed2026Accounts = [
   [
@@ -52,14 +61,22 @@ let state = loadState();
 let activeYearIndex = Math.min(state.activeYearIndex ?? 0, state.years.length - 1);
 let activeMonthIndex = Math.min(state.activeMonthIndex ?? getLastUpdatedMonthIndex(currentYear()), MONTH_COUNT - 1);
 let undoState = null;
+let activeTrendAccount = ALL_TREND_ACCOUNTS;
+let trendHitAreas = [];
 
 const yearTabs = document.querySelector("#yearTabs");
 const monthTabs = document.querySelector("#monthTabs");
 const ledgerBody = document.querySelector("#ledgerBody");
 const allocationChart = document.querySelector("#allocationChart");
 const trendChart = document.querySelector("#trendChart");
+const canadaLivingChart = document.querySelector("#canadaLivingChart");
+const koreaLivingChart = document.querySelector("#koreaLivingChart");
 const allocationCtx = allocationChart.getContext("2d");
 const trendCtx = trendChart.getContext("2d");
+const canadaLivingCtx = canadaLivingChart.getContext("2d");
+const koreaLivingCtx = koreaLivingChart.getContext("2d");
+const trendAccountFilter = document.querySelector("#trendAccountFilter");
+const trendTooltip = document.querySelector("#trendTooltip");
 
 document.querySelector("#addMonthBtn").addEventListener("click", () => {
   pushUndoState();
@@ -117,6 +134,12 @@ document.querySelector("#restoreCsvInput").addEventListener("change", importCsv)
 document.querySelector("#saveSheetsUrlBtn").addEventListener("click", saveSheetsUrl);
 document.querySelector("#pullSheetsBtn").addEventListener("click", pullFromSheets);
 document.querySelector("#pushSheetsBtn").addEventListener("click", pushToSheets);
+trendAccountFilter.addEventListener("change", () => {
+  activeTrendAccount = trendAccountFilter.value;
+  renderTrendChart();
+});
+trendChart.addEventListener("mousemove", showTrendTooltip);
+trendChart.addEventListener("mouseleave", hideTrendTooltip);
 
 const sheetsUrlInput = document.querySelector("#sheetsWebAppUrl");
 sheetsUrlInput.value = localStorage.getItem(SHEETS_SYNC_URL_KEY) || "";
@@ -127,6 +150,20 @@ document.querySelectorAll(".money-entry").forEach((input) => {
   });
   input.addEventListener("focus", () => {
     input.value = String(readInputNumber(input.value) || "");
+  });
+});
+
+document.querySelectorAll(".living-input").forEach((input) => {
+  input.addEventListener("focus", () => {
+    input.value = String(readInputNumber(input.value) || "");
+  });
+  input.addEventListener("blur", () => {
+    input.value = formatMoneyInput(readInputNumber(input.value));
+  });
+  input.addEventListener("change", () => {
+    pushUndoState();
+    currentLivingExpenses()[input.dataset.livingField] = readInputNumber(input.value);
+    saveAndRender();
   });
 });
 
@@ -174,6 +211,7 @@ function createDefaultState() {
         months: Array.from({ length: MONTH_COUNT }, (_, index) => ({
           month: index + 1,
           accounts: structuredClone(seed2026Accounts[index] || []),
+          livingExpenses: createEmptyLivingExpenses(),
         })),
       },
     ],
@@ -185,6 +223,7 @@ function createEmptyYear(year, accountTemplate = []) {
     year,
     months: Array.from({ length: MONTH_COUNT }, (_, index) => ({
       month: index + 1,
+      livingExpenses: createEmptyLivingExpenses(),
       accounts:
         index === 0
           ? accountTemplate.map((account) => ({
@@ -200,11 +239,33 @@ function createEmptyYear(year, accountTemplate = []) {
 function loadState() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (saved?.years?.length) return saved;
+    if (saved?.years?.length) return normalizeState(saved);
   } catch {
     localStorage.removeItem(STORAGE_KEY);
   }
   return createDefaultState();
+}
+
+function normalizeState(rawState) {
+  rawState.years.forEach((year) => {
+    year.months.forEach((month) => {
+      month.livingExpenses = {
+        ...createEmptyLivingExpenses(),
+        ...(month.livingExpenses || {}),
+      };
+    });
+  });
+  return rawState;
+}
+
+function createEmptyLivingExpenses() {
+  return {
+    food: 0,
+    living: 0,
+    other: 0,
+    koreanIncome: 0,
+    cardPayment: 0,
+  };
 }
 
 function pushUndoState() {
@@ -246,13 +307,25 @@ function currentMonth() {
   return currentYear().months[activeMonthIndex];
 }
 
+function currentLivingExpenses() {
+  const month = currentMonth();
+  month.livingExpenses = {
+    ...createEmptyLivingExpenses(),
+    ...(month.livingExpenses || {}),
+  };
+  return month.livingExpenses;
+}
+
 function render() {
   renderYearTabs();
   renderMonthTabs();
   renderSummary();
   renderLedger();
+  renderLivingExpenses();
   renderAllocationChart();
+  renderTrendFilter();
   renderTrendChart();
+  renderLivingCharts();
 }
 
 function renderYearTabs() {
@@ -305,10 +378,10 @@ function renderSummary() {
   document.querySelector("#valuationMetricLabel").textContent = `${monthLabel}말 총 금액`;
   document.querySelector("#totalPrincipal").textContent = formatWon(totals.principal);
   document.querySelector("#totalValuation").textContent = formatWon(totals.valuation);
-  document.querySelector("#totalProfit").textContent = formatWon(totals.profit);
-  document.querySelector("#totalReturn").textContent = formatPercent(totals.returnRate);
-  document.querySelector("#ytdProfit").textContent = formatWon(calculateYtdProfit(activeMonthIndex));
-  document.querySelector("#cashflowTotal").textContent = formatWon(totals.cashflow);
+  setSignedText("#totalProfit", totals.profit, formatWon(totals.profit));
+  setSignedText("#totalReturn", totals.returnRate, formatPercent(totals.returnRate));
+  setSignedText("#ytdProfit", calculateYtdProfit(activeMonthIndex), formatWon(calculateYtdProfit(activeMonthIndex)));
+  setSignedText("#cashflowTotal", totals.cashflow, formatWon(totals.cashflow));
 }
 
 function renderLedger() {
@@ -335,10 +408,10 @@ function renderLedger() {
             </td>
             <td><input class="number-input money-input" data-field="principal" data-index="${index}" type="text" inputmode="numeric" value="${formatMoneyInput(account.principal)}" aria-label="원금" /></td>
             <td><input class="number-input money-input" data-field="valuation" data-index="${index}" type="text" inputmode="numeric" value="${formatMoneyInput(account.valuation)}" aria-label="평가금" /></td>
-            <td class="amount ${profit < 0 ? "negative" : "positive"}">${formatWon(profit)}</td>
-            <td class="amount ${rate < 0 ? "negative" : "positive"}">${formatPercent(rate)}</td>
-            <td class="amount ${ytd < 0 ? "negative" : "positive"}">${formatWon(ytd)}</td>
-            <td><input class="number-input money-input" data-field="cashflow" data-index="${index}" type="text" inputmode="numeric" value="${formatMoneyInput(account.cashflow)}" aria-label="입출금" /></td>
+            <td class="amount ${getSignedClass(profit)}">${formatWon(profit)}</td>
+            <td class="amount ${getSignedClass(rate)}">${formatPercent(rate)}</td>
+            <td class="amount ${getSignedClass(ytd)}">${formatWon(ytd)}</td>
+            <td><input class="number-input money-input ${getSignedClass(account.cashflow)}" data-field="cashflow" data-index="${index}" type="text" inputmode="numeric" value="${formatMoneyInput(account.cashflow)}" aria-label="입출금" /></td>
             <td><button class="delete-button" type="button" data-delete-index="${index}" title="삭제" aria-label="삭제">×</button></td>
           </tr>
         `;
@@ -349,10 +422,162 @@ function renderLedger() {
   const totals = calculateMonthTotals(month);
   document.querySelector("#footerPrincipal").textContent = formatWon(totals.principal);
   document.querySelector("#footerValuation").textContent = formatWon(totals.valuation);
-  document.querySelector("#footerProfit").textContent = formatWon(totals.profit);
-  document.querySelector("#footerReturn").textContent = formatPercent(totals.returnRate);
-  document.querySelector("#footerYtd").textContent = formatWon(calculateYtdProfit(activeMonthIndex));
-  document.querySelector("#footerCashflow").textContent = formatWon(totals.cashflow);
+  setSignedText("#footerProfit", totals.profit, formatWon(totals.profit));
+  setSignedText("#footerReturn", totals.returnRate, formatPercent(totals.returnRate));
+  setSignedText("#footerYtd", calculateYtdProfit(activeMonthIndex), formatWon(calculateYtdProfit(activeMonthIndex)));
+  setSignedText("#footerCashflow", totals.cashflow, formatWon(totals.cashflow));
+}
+
+function renderLivingExpenses() {
+  const living = currentLivingExpenses();
+  document.querySelector("#livingSelectedMonth").textContent = `${currentYear().year}년 ${currentMonth().month}월`;
+  livingExpenseFields.forEach((field) => {
+    const input = document.querySelector(`[data-living-field="${field}"]`);
+    if (input && document.activeElement !== input) input.value = formatMoneyInput(living[field]);
+  });
+  document.querySelector("#livingTotal").textContent = formatWon(living.food + living.living + living.other);
+}
+
+function renderLivingCharts() {
+  const months = currentYear().months.map((month) => ({
+    month: month.month,
+    living: {
+      ...createEmptyLivingExpenses(),
+      ...(month.livingExpenses || {}),
+    },
+  }));
+
+  drawLivingStackedChart(canadaLivingCtx, canadaLivingChart, months, [
+    { field: "food", label: "식비", color: livingColors.food, sign: 1 },
+    { field: "living", label: "생활비", color: livingColors.living, sign: 1 },
+    { field: "other", label: "기타", color: livingColors.other, sign: 1 },
+  ]);
+
+  drawLivingStackedChart(koreaLivingCtx, koreaLivingChart, months, [
+    { field: "koreanIncome", label: "월수입", color: livingColors.koreanIncome, sign: 1 },
+    { field: "cardPayment", label: "카드값", color: livingColors.cardPayment, sign: -1 },
+  ]);
+}
+
+function drawLivingStackedChart(ctx, canvas, months, series) {
+  const width = canvas.width;
+  const height = canvas.height;
+  const left = 46;
+  const right = 16;
+  const top = 20;
+  const bottom = 36;
+  const chartHeight = height - top - bottom;
+  const chartWidth = width - left - right;
+  const gap = 7;
+  const barWidth = Math.max(20, (chartWidth - gap * (MONTH_COUNT - 1)) / MONTH_COUNT);
+  const stacks = months.map((month) => {
+    const values = series.map((item) => ({
+      ...item,
+      value: toNumber(month.living[item.field]) * item.sign,
+    }));
+    return {
+      month: month.month,
+      values,
+      positiveTotal: values.filter((item) => item.value > 0).reduce((sum, item) => sum + item.value, 0),
+      negativeTotal: values.filter((item) => item.value < 0).reduce((sum, item) => sum + item.value, 0),
+    };
+  });
+
+  const maxPositive = Math.max(...stacks.map((stack) => stack.positiveTotal), 1);
+  const minNegative = Math.min(...stacks.map((stack) => stack.negativeTotal), 0);
+  const range = maxPositive - minNegative || 1;
+  const zeroY = top + (maxPositive / range) * chartHeight;
+
+  ctx.clearRect(0, 0, width, height);
+  drawLivingGrid(ctx, left, top, chartWidth, chartHeight, maxPositive, minNegative, zeroY);
+
+  stacks.forEach((stack, index) => {
+    const x = left + index * (barWidth + gap);
+    let positiveY = zeroY;
+    let negativeY = zeroY;
+    const grossTotal = stack.values.reduce((sum, item) => sum + Math.abs(item.value), 0);
+
+    stack.values.forEach((item) => {
+      if (!item.value) return;
+      const segmentHeight = Math.max(1, (Math.abs(item.value) / range) * chartHeight);
+      const percent = grossTotal ? Math.abs(item.value) / grossTotal : 0;
+      ctx.fillStyle = item.color;
+
+      if (item.value > 0) {
+        positiveY -= segmentHeight;
+        ctx.fillRect(x, positiveY, barWidth, segmentHeight);
+        drawLivingStackLabel(ctx, x, positiveY, barWidth, segmentHeight, item.value, percent);
+      } else {
+        ctx.fillRect(x, negativeY, barWidth, segmentHeight);
+        drawLivingStackLabel(ctx, x, negativeY, barWidth, segmentHeight, item.value, percent);
+        negativeY += segmentHeight;
+      }
+    });
+
+    if (!grossTotal) {
+      ctx.fillStyle = "#edf2f0";
+      ctx.fillRect(x, zeroY - 2, barWidth, 4);
+    }
+
+    ctx.fillStyle = "#52615c";
+    ctx.font = "11px Segoe UI, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(`${stack.month}월`, x + barWidth / 2, height - 10);
+  });
+
+  drawLivingLegend(ctx, series, left, 12);
+}
+
+function drawLivingGrid(ctx, left, top, chartWidth, chartHeight, maxPositive, minNegative, zeroY) {
+  ctx.strokeStyle = "#dce5e1";
+  ctx.fillStyle = "#6b7772";
+  ctx.lineWidth = 1;
+  ctx.font = "10px Segoe UI, sans-serif";
+  ctx.textAlign = "right";
+
+  const ticks = [maxPositive, maxPositive / 2, 0, minNegative / 2, minNegative].filter((value, index, list) => index === 0 || Math.abs(value - list[index - 1]) > 1000);
+  ticks.forEach((value) => {
+    const y = valueToY(value, top, chartHeight, maxPositive, minNegative);
+    ctx.beginPath();
+    ctx.moveTo(left, y);
+    ctx.lineTo(left + chartWidth, y);
+    ctx.stroke();
+    ctx.fillText(formatManwon(value), left - 6, y + 4);
+  });
+
+  ctx.strokeStyle = "#7e8a86";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(left, zeroY);
+  ctx.lineTo(left + chartWidth, zeroY);
+  ctx.stroke();
+}
+
+function drawLivingStackLabel(ctx, x, y, width, height, value, percent) {
+  if (height < 24 || width < 24) return;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, width, height);
+  ctx.clip();
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "700 9px Segoe UI, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(height > 38 ? formatManwon(value) : `${Math.round(percent * 100)}%`, x + width / 2, y + height / 2);
+  ctx.restore();
+}
+
+function drawLivingLegend(ctx, series, left, y) {
+  let x = left;
+  series.forEach((item) => {
+    ctx.fillStyle = item.color;
+    ctx.fillRect(x, y - 8, 9, 9);
+    ctx.fillStyle = "#52615c";
+    ctx.font = "11px Segoe UI, sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText(item.label, x + 13, y);
+    x += item.label.length * 12 + 26;
+  });
 }
 
 function renderAllocationChart() {
@@ -400,6 +625,19 @@ function renderAllocationChart() {
     .join("");
 }
 
+function renderTrendFilter() {
+  const names = getAllAccountNames();
+  if (activeTrendAccount !== ALL_TREND_ACCOUNTS && !names.includes(activeTrendAccount)) {
+    activeTrendAccount = ALL_TREND_ACCOUNTS;
+  }
+
+  trendAccountFilter.innerHTML = [
+    `<option value="${ALL_TREND_ACCOUNTS}">전체</option>`,
+    ...names.map((name) => `<option value="${escapeAttribute(name)}">${escapeHtml(name)}</option>`),
+  ].join("");
+  trendAccountFilter.value = activeTrendAccount;
+}
+
 function renderTrendChart() {
   const width = trendChart.width;
   const height = trendChart.height;
@@ -412,7 +650,7 @@ function renderTrendChart() {
   const year = currentYear();
   const lastUpdatedIndex = getLastUpdatedMonthIndex(year);
   const monthStacks = year.months.map((month, index) => {
-    const accounts = index <= lastUpdatedIndex ? month.accounts : [];
+    const accounts = index <= lastUpdatedIndex ? getTrendAccounts(month.accounts) : [];
     const positive = accounts.filter((account) => toNumber(account.valuation) > 0);
     const negative = accounts.filter((account) => toNumber(account.valuation) < 0);
     return {
@@ -420,6 +658,7 @@ function renderTrendChart() {
       negative,
       positiveTotal: positive.reduce((sum, account) => sum + toNumber(account.valuation), 0),
       negativeTotal: negative.reduce((sum, account) => sum + toNumber(account.valuation), 0),
+      grossTotal: accounts.reduce((sum, account) => sum + Math.abs(toNumber(account.valuation)), 0),
     };
   });
   const maxPositive = Math.max(...monthStacks.map((stack) => stack.positiveTotal), 1);
@@ -430,6 +669,8 @@ function renderTrendChart() {
   const barWidth = Math.max(28, (chartWidth - gap * (MONTH_COUNT - 1)) / MONTH_COUNT);
 
   trendCtx.clearRect(0, 0, width, height);
+  trendHitAreas = [];
+  hideTrendTooltip();
   drawTrendGrid(left, top, chartWidth, chartHeight, maxPositive, minNegative, zeroY);
 
   year.months.forEach((month, monthIndex) => {
@@ -442,10 +683,20 @@ function renderTrendChart() {
       stack.positive.forEach((account) => {
         const value = toNumber(account.valuation);
         const segmentHeight = Math.max(1, (value / range) * chartHeight);
-        const percent = value / stack.positiveTotal;
+        const percent = stack.grossTotal ? Math.abs(value) / stack.grossTotal : 0;
         positiveY -= segmentHeight;
         trendCtx.fillStyle = colors[getAccountColorIndex(account.name)];
         trendCtx.fillRect(x, positiveY, barWidth, segmentHeight);
+        trendHitAreas.push({
+          x,
+          y: positiveY,
+          width: barWidth,
+          height: segmentHeight,
+          month: month.month,
+          accountName: account.name,
+          value,
+          percent,
+        });
         drawStackLabel(x, positiveY, barWidth, segmentHeight, value, percent);
       });
 
@@ -454,7 +705,18 @@ function renderTrendChart() {
         const segmentHeight = Math.max(1, (Math.abs(value) / range) * chartHeight);
         trendCtx.fillStyle = debtColor;
         trendCtx.fillRect(x, negativeY, barWidth, segmentHeight);
-        drawStackLabel(x, negativeY, barWidth, segmentHeight, value, value / stack.positiveTotal);
+        const percent = stack.grossTotal ? Math.abs(value) / stack.grossTotal : 0;
+        trendHitAreas.push({
+          x,
+          y: negativeY,
+          width: barWidth,
+          height: segmentHeight,
+          month: month.month,
+          accountName: account.name,
+          value,
+          percent,
+        });
+        drawStackLabel(x, negativeY, barWidth, segmentHeight, value, percent);
         negativeY += segmentHeight;
       });
 
@@ -476,7 +738,8 @@ function renderTrendChart() {
     trendCtx.fillText(`${month.month}월`, x + barWidth / 2, height - 12);
   });
 
-  document.querySelector("#trendCaption").textContent = `${year.year}년 1월~12월, 마지막 업데이트: ${lastUpdatedIndex + 1}월`;
+  const filterLabel = activeTrendAccount === ALL_TREND_ACCOUNTS ? "전체" : activeTrendAccount;
+  document.querySelector("#trendCaption").textContent = `${year.year}년 1월~12월, ${filterLabel}, 마지막 업데이트: ${lastUpdatedIndex + 1}월`;
 }
 
 function drawTrendGrid(left, top, chartWidth, chartHeight, maxPositive, minNegative, zeroY) {
@@ -567,9 +830,45 @@ function getLastUpdatedMonthIndex(year) {
 }
 
 function getAccountColorIndex(accountName) {
-  const names = Array.from(new Set(state.years.flatMap((year) => year.months.flatMap((month) => month.accounts.map((account) => account.name)))));
+  const names = getAllAccountNames();
   const index = names.indexOf(accountName);
   return (index < 0 ? 0 : index) % colors.length;
+}
+
+function getAllAccountNames() {
+  return Array.from(new Set(state.years.flatMap((year) => year.months.flatMap((month) => month.accounts.map((account) => account.name)))));
+}
+
+function getTrendAccounts(accounts) {
+  if (activeTrendAccount === ALL_TREND_ACCOUNTS) return accounts;
+  return accounts.filter((account) => account.name === activeTrendAccount);
+}
+
+function showTrendTooltip(event) {
+  const rect = trendChart.getBoundingClientRect();
+  const scaleX = trendChart.width / rect.width;
+  const scaleY = trendChart.height / rect.height;
+  const x = (event.clientX - rect.left) * scaleX;
+  const y = (event.clientY - rect.top) * scaleY;
+  const hit = trendHitAreas.find((area) => x >= area.x && x <= area.x + area.width && y >= area.y && y <= area.y + area.height);
+
+  if (!hit) {
+    hideTrendTooltip();
+    return;
+  }
+
+  trendTooltip.innerHTML = `
+    <strong>${hit.month}월 ${escapeHtml(hit.accountName)}</strong>
+    <span>${formatWon(hit.value)}</span>
+    <span>비중 ${formatPercent(hit.percent)}</span>
+  `;
+  trendTooltip.classList.remove("hidden");
+  trendTooltip.style.left = `${event.clientX + 14}px`;
+  trendTooltip.style.top = `${event.clientY + 14}px`;
+}
+
+function hideTrendTooltip() {
+  trendTooltip.classList.add("hidden");
 }
 
 function getProfit(account) {
@@ -581,8 +880,23 @@ function getReturnRate(account) {
   return principal ? getProfit(account) / principal : 0;
 }
 
+function getSignedClass(value) {
+  const number = toNumber(value);
+  if (number > 0) return "positive";
+  if (number < 0) return "negative";
+  return "";
+}
+
+function setSignedText(selector, value, text) {
+  const element = document.querySelector(selector);
+  element.textContent = text;
+  element.classList.remove("positive", "negative");
+  const className = getSignedClass(value);
+  if (className) element.classList.add(className);
+}
+
 function getExportRows() {
-  const rows = [["연도", "월", "구분", "분류", "원금", "평가금", "평가손익", "수익률", "연간수익", "입출금"]];
+  const rows = [["연도", "월", "구분", "분류", "원금", "평가금", "평가손익", "수익률", "연간수익", "입출금", "데이터구분"]];
   state.years.forEach((year) => {
     year.months.forEach((month, monthIndex) => {
       month.accounts.forEach((account) => {
@@ -597,7 +911,21 @@ function getExportRows() {
           getReturnRate(account),
           calculateAccountYtdForYear(year, account.name, monthIndex),
           toNumber(account.cashflow),
+          "자산",
         ]);
+      });
+      const living = {
+        ...createEmptyLivingExpenses(),
+        ...(month.livingExpenses || {}),
+      };
+      [
+        ["식비", living.food],
+        ["생활비", living.living],
+        ["기타", living.other],
+        ["한국 월수입", living.koreanIncome],
+        ["카드값", living.cardPayment],
+      ].forEach(([name, value]) => {
+        rows.push([year.year, month.month, name, "생활비", 0, toNumber(value), 0, 0, 0, 0, "생활비"]);
       });
     });
   });
@@ -606,6 +934,7 @@ function getExportRows() {
 
 async function exportCsv() {
   syncVisibleLedgerInputs();
+  syncVisibleLivingInputs();
   const rows = getExportRows();
   const csv = rows.map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(",")).join("\n");
   const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
@@ -657,6 +986,7 @@ async function pushToSheets() {
   if (!url) return;
 
   syncVisibleLedgerInputs();
+  syncVisibleLivingInputs();
   setSheetsStatus("Google Sheets로 저장하는 중입니다...");
   try {
     const body = new URLSearchParams({
@@ -788,6 +1118,26 @@ function syncVisibleLedgerInputs() {
   }
 }
 
+function syncVisibleLivingInputs() {
+  let changed = false;
+  const living = currentLivingExpenses();
+  document.querySelectorAll(".living-input").forEach((input) => {
+    const field = input.dataset.livingField;
+    const nextValue = readInputNumber(input.value);
+    if (living[field] !== nextValue) {
+      living[field] = nextValue;
+      changed = true;
+    }
+  });
+
+  if (changed) {
+    state.activeYearIndex = activeYearIndex;
+    state.activeMonthIndex = activeMonthIndex;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    render();
+  }
+}
+
 function importCsv(event) {
   const file = event.target.files?.[0];
   if (!file) return;
@@ -863,6 +1213,7 @@ function stateFromCsv(rows) {
   const principalCol = column("원금");
   const valuationCol = column("평가금");
   const cashflowCol = column("입출금");
+  const dataTypeCol = column("데이터구분");
 
   if ([yearCol, monthCol, nameCol, typeCol, principalCol, valuationCol, cashflowCol].some((index) => index < 0)) {
     throw new Error("필수 열(연도, 월, 구분, 분류, 원금, 평가금, 입출금)이 필요합니다.");
@@ -884,6 +1235,18 @@ function stateFromCsv(rows) {
 
     const year = yearsByNumber.get(yearNumber);
     const month = year.months[Math.min(Math.max(monthNumber, 1), MONTH_COUNT) - 1];
+    const dataType = dataTypeCol >= 0 ? row[dataTypeCol]?.trim() : "자산";
+
+    if (dataType === "생활비") {
+      month.livingExpenses = {
+        ...createEmptyLivingExpenses(),
+        ...(month.livingExpenses || {}),
+      };
+      const field = livingExpenseNameToField(name);
+      if (field) month.livingExpenses[field] = readInputNumber(row[valuationCol]);
+      return;
+    }
+
     month.accounts.push({
       name,
       type: row[typeCol]?.trim() || "기타",
@@ -894,7 +1257,17 @@ function stateFromCsv(rows) {
   });
 
   const years = Array.from(yearsByNumber.values()).sort((a, b) => a.year - b.year);
-  return { activeYearIndex: 0, activeMonthIndex: 0, years };
+  return normalizeState({ activeYearIndex: 0, activeMonthIndex: 0, years });
+}
+
+function livingExpenseNameToField(name) {
+  return {
+    식비: "food",
+    생활비: "living",
+    기타: "other",
+    "한국 월수입": "koreanIncome",
+    카드값: "cardPayment",
+  }[name];
 }
 
 function calculateAccountYtdForYear(year, accountName, monthIndex) {
@@ -937,6 +1310,13 @@ function formatEok(value) {
   const eok = value / 100000000;
   if (Math.abs(eok) >= 10) return `${Math.round(eok)}억`;
   return `${new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 1 }).format(eok)}억`;
+}
+
+function formatManwon(value) {
+  const manwon = value / 10000;
+  if (!value) return "0";
+  if (Math.abs(manwon) >= 100) return `${Math.round(manwon)}만`;
+  return `${new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 1 }).format(manwon)}만`;
 }
 
 function formatPercent(value) {
