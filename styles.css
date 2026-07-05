@@ -175,7 +175,8 @@ h2 {
 .panel,
 .table-section,
 .editor-section,
-.living-section {
+.living-section,
+.sync-section {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -215,10 +216,12 @@ h2 {
 .panel,
 .table-section,
 .editor-section,
-.living-section {
+.living-section,
+.sync-section {
   padding: 20px;
 }
 
+.allocation-panel,
 .trend-panel {
   position: relative;
 }
@@ -300,7 +303,7 @@ h2 {
 .table-section,
 .editor-section,
 .living-section,
-.backup-section {
+.sync-section {
   margin-top: 18px;
 }
 
@@ -397,11 +400,34 @@ select {
   margin-top: 14px;
 }
 
+.living-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.living-group {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfc;
+  padding: 16px;
+}
+
+.living-group h3 {
+  margin: 0 0 12px;
+  font-size: 17px;
+}
+
 .living-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
-  margin-top: 14px;
+}
+
+.canada-living-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .living-total {
@@ -422,7 +448,7 @@ select {
 .living-total strong {
   margin-top: 4px;
   color: var(--blue-dark);
-  font-size: 20px;
+  font-size: clamp(16px, 1.4vw, 20px);
   white-space: nowrap;
 }
 
@@ -477,6 +503,11 @@ select {
   margin-top: 18px;
   padding-top: 18px;
   border-top: 1px solid var(--line);
+}
+
+.sync-section {
+  display: grid;
+  gap: 14px;
 }
 
 .sheet-sync h3 {
@@ -555,7 +586,15 @@ label {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .canada-living-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .living-charts {
+    grid-template-columns: 1fr;
+  }
+
+  .living-groups {
     grid-template-columns: 1fr;
   }
 }
@@ -607,7 +646,9 @@ label {
     grid-template-columns: 1fr;
   }
 
-  .living-grid {
+  .living-grid,
+  .canada-living-grid,
+  .living-groups {
     grid-template-columns: 1fr;
   }
 

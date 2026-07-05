@@ -63,6 +63,7 @@ let activeMonthIndex = Math.min(state.activeMonthIndex ?? getLastUpdatedMonthInd
 let undoState = null;
 let activeTrendAccount = ALL_TREND_ACCOUNTS;
 let trendHitAreas = [];
+let allocationHitAreas = [];
 
 const yearTabs = document.querySelector("#yearTabs");
 const monthTabs = document.querySelector("#monthTabs");
@@ -77,6 +78,7 @@ const canadaLivingCtx = canadaLivingChart.getContext("2d");
 const koreaLivingCtx = koreaLivingChart.getContext("2d");
 const trendAccountFilter = document.querySelector("#trendAccountFilter");
 const trendTooltip = document.querySelector("#trendTooltip");
+const allocationTooltip = document.querySelector("#allocationTooltip");
 
 document.querySelector("#addMonthBtn").addEventListener("click", () => {
   pushUndoState();
@@ -128,21 +130,23 @@ document.querySelector("#entryForm").addEventListener("submit", (event) => {
   saveAndRender();
 });
 
-document.querySelector("#backupCsvBtn").addEventListener("click", exportCsv);
 document.querySelector("#undoBtn").addEventListener("click", undoLastChange);
-document.querySelector("#restoreCsvInput").addEventListener("change", importCsv);
-document.querySelector("#saveSheetsUrlBtn").addEventListener("click", saveSheetsUrl);
-document.querySelector("#pullSheetsBtn").addEventListener("click", pullFromSheets);
-document.querySelector("#pushSheetsBtn").addEventListener("click", pushToSheets);
+document.querySelector("#backupCsvBtn")?.addEventListener("click", exportCsv);
+document.querySelector("#restoreCsvInput")?.addEventListener("change", importCsv);
+document.querySelector("#saveSheetsUrlBtn")?.addEventListener("click", saveSheetsUrl);
+document.querySelector("#pullSheetsBtn")?.addEventListener("click", pullFromSheets);
+document.querySelector("#pushSheetsBtn")?.addEventListener("click", pushToSheets);
 trendAccountFilter.addEventListener("change", () => {
   activeTrendAccount = trendAccountFilter.value;
   renderTrendChart();
 });
+allocationChart.addEventListener("mousemove", showAllocationTooltip);
+allocationChart.addEventListener("mouseleave", hideAllocationTooltip);
 trendChart.addEventListener("mousemove", showTrendTooltip);
 trendChart.addEventListener("mouseleave", hideTrendTooltip);
 
 const sheetsUrlInput = document.querySelector("#sheetsWebAppUrl");
-sheetsUrlInput.value = localStorage.getItem(SHEETS_SYNC_URL_KEY) || "";
+if (sheetsUrlInput) sheetsUrlInput.value = localStorage.getItem(SHEETS_SYNC_URL_KEY) || "";
 
 document.querySelectorAll(".money-entry").forEach((input) => {
   input.addEventListener("blur", () => {
@@ -430,12 +434,16 @@ function renderLedger() {
 
 function renderLivingExpenses() {
   const living = currentLivingExpenses();
+  const ytd = calculateLivingYtd();
   document.querySelector("#livingSelectedMonth").textContent = `${currentYear().year}년 ${currentMonth().month}월`;
   livingExpenseFields.forEach((field) => {
     const input = document.querySelector(`[data-living-field="${field}"]`);
     if (input && document.activeElement !== input) input.value = formatMoneyInput(living[field]);
   });
   document.querySelector("#livingTotal").textContent = formatWon(living.food + living.living + living.other);
+  document.querySelector("#canadaLivingYtd").textContent = formatWon(ytd.canada);
+  document.querySelector("#koreanIncomeYtd").textContent = formatWon(ytd.koreanIncome);
+  document.querySelector("#cardPaymentYtd").textContent = formatWon(ytd.cardPayment);
 }
 
 function renderLivingCharts() {
@@ -447,11 +455,17 @@ function renderLivingCharts() {
     },
   }));
 
-  drawLivingStackedChart(canadaLivingCtx, canadaLivingChart, months, [
-    { field: "food", label: "식비", color: livingColors.food, sign: 1 },
-    { field: "living", label: "생활비", color: livingColors.living, sign: 1 },
-    { field: "other", label: "기타", color: livingColors.other, sign: 1 },
-  ]);
+  drawLivingStackedChart(
+    canadaLivingCtx,
+    canadaLivingChart,
+    months,
+    [
+      { field: "food", label: "식비", color: livingColors.food, sign: 1 },
+      { field: "living", label: "생활비", color: livingColors.living, sign: 1 },
+      { field: "other", label: "기타", color: livingColors.other, sign: 1 },
+    ],
+    { showPositiveTotals: true }
+  );
 
   drawLivingStackedChart(koreaLivingCtx, koreaLivingChart, months, [
     { field: "koreanIncome", label: "월수입", color: livingColors.koreanIncome, sign: 1 },
@@ -459,7 +473,7 @@ function renderLivingCharts() {
   ]);
 }
 
-function drawLivingStackedChart(ctx, canvas, months, series) {
+function drawLivingStackedChart(ctx, canvas, months, series, options = {}) {
   const width = canvas.width;
   const height = canvas.height;
   const left = 46;
@@ -514,6 +528,13 @@ function drawLivingStackedChart(ctx, canvas, months, series) {
       }
     });
 
+    if (options.showPositiveTotals && stack.positiveTotal > 0) {
+      ctx.fillStyle = "#17211d";
+      ctx.font = "700 10px Segoe UI, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(formatManwon(stack.positiveTotal), x + barWidth / 2, Math.max(12, positiveY - 6));
+    }
+
     if (!grossTotal) {
       ctx.fillStyle = "#edf2f0";
       ctx.fillRect(x, zeroY - 2, barWidth, 4);
@@ -563,7 +584,7 @@ function drawLivingStackLabel(ctx, x, y, width, height, value, percent) {
   ctx.font = "700 9px Segoe UI, sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(height > 38 ? formatManwon(value) : `${Math.round(percent * 100)}%`, x + width / 2, y + height / 2);
+  ctx.fillText(height > 38 ? formatManwon(value) : `(${Math.round(percent * 100)}%)`, x + width / 2, y + height / 2);
   ctx.restore();
 }
 
@@ -580,26 +601,56 @@ function drawLivingLegend(ctx, series, left, y) {
   });
 }
 
-function renderAllocationChart() {
-  const entries = currentMonth().accounts.filter((account) => toNumber(account.valuation) > 0);
-  const total = entries.reduce((sum, account) => sum + toNumber(account.valuation), 0);
-  allocationCtx.clearRect(0, 0, allocationChart.width, allocationChart.height);
+function calculateLivingYtd() {
+  return currentYear().months.slice(0, activeMonthIndex + 1).reduce(
+    (totals, month) => {
+      const living = {
+        ...createEmptyLivingExpenses(),
+        ...(month.livingExpenses || {}),
+      };
+      totals.canada += toNumber(living.food) + toNumber(living.living) + toNumber(living.other);
+      totals.koreanIncome += toNumber(living.koreanIncome);
+      totals.cardPayment += toNumber(living.cardPayment);
+      return totals;
+    },
+    { canada: 0, koreanIncome: 0, cardPayment: 0 }
+  );
+}
 
-  if (!total) {
+function renderAllocationChart() {
+  const entries = currentMonth().accounts.filter((account) => toNumber(account.valuation) !== 0);
+  const total = entries.reduce((sum, account) => sum + toNumber(account.valuation), 0);
+  const magnitudeTotal = entries.reduce((sum, account) => sum + Math.abs(toNumber(account.valuation)), 0);
+  allocationCtx.clearRect(0, 0, allocationChart.width, allocationChart.height);
+  allocationHitAreas = [];
+  hideAllocationTooltip();
+
+  if (!magnitudeTotal) {
     document.querySelector("#allocationLegend").innerHTML = '<span class="subtle">표시할 평가금이 없습니다.</span>';
     return;
   }
 
   let start = -Math.PI / 2;
   entries.forEach((account) => {
-    const slice = (toNumber(account.valuation) / total) * Math.PI * 2;
+    const value = toNumber(account.valuation);
+    const slice = (Math.abs(value) / magnitudeTotal) * Math.PI * 2;
+    const end = start + slice;
+    const mid = start + slice / 2;
     allocationCtx.beginPath();
     allocationCtx.moveTo(140, 140);
-    allocationCtx.arc(140, 140, 116, start, start + slice);
+    allocationCtx.arc(140, 140, 116, start, end);
     allocationCtx.closePath();
-    allocationCtx.fillStyle = colors[getAccountColorIndex(account.name)];
+    allocationCtx.fillStyle = value < 0 ? debtColor : colors[getAccountColorIndex(account.name)];
     allocationCtx.fill();
-    start += slice;
+    allocationHitAreas.push({
+      accountName: account.name,
+      value,
+      percent: total ? value / total : 0,
+      start,
+      end,
+    });
+    drawAllocationSliceLabel(mid, slice, value, total ? value / total : 0);
+    start = end;
   });
 
   allocationCtx.beginPath();
@@ -617,12 +668,27 @@ function renderAllocationChart() {
     .map(
       (account) => `
         <div class="legend-item">
-          <span class="swatch" style="background:${colors[getAccountColorIndex(account.name)]}"></span>
-          <span>${escapeHtml(account.name)} ${formatEok(toNumber(account.valuation))} ${formatPercent(toNumber(account.valuation) / total)}</span>
+          <span class="swatch" style="background:${toNumber(account.valuation) < 0 ? debtColor : colors[getAccountColorIndex(account.name)]}"></span>
+          <span>${escapeHtml(account.name)} ${formatEok(toNumber(account.valuation))} (${formatPercent(total ? toNumber(account.valuation) / total : 0)})</span>
         </div>
       `
     )
     .join("");
+}
+
+function drawAllocationSliceLabel(angle, slice, value, percent) {
+  if (slice < 0.28) return;
+  const radius = 91;
+  const x = 140 + Math.cos(angle) * radius;
+  const y = 140 + Math.sin(angle) * radius;
+  allocationCtx.save();
+  allocationCtx.fillStyle = "#ffffff";
+  allocationCtx.font = slice > 0.5 ? "700 10px Segoe UI, sans-serif" : "700 9px Segoe UI, sans-serif";
+  allocationCtx.textAlign = "center";
+  allocationCtx.textBaseline = "middle";
+  allocationCtx.fillText(formatEok(value), x, y - 6);
+  allocationCtx.fillText(`(${formatPercent(percent)})`, x, y + 7);
+  allocationCtx.restore();
 }
 
 function renderTrendFilter() {
@@ -775,7 +841,7 @@ function valueToY(value, top, chartHeight, maxPositive, minNegative) {
 function drawStackLabel(x, y, width, height, value, percent) {
   if (height < 28 || width < 32) return;
   const amountLabel = formatEok(value);
-  const percentLabel = Number.isFinite(percent) ? `${Math.round(percent * 100)}%` : "";
+  const percentLabel = Number.isFinite(percent) ? `(${Math.round(percent * 100)}%)` : "";
   trendCtx.save();
   trendCtx.beginPath();
   trendCtx.rect(x, y, width, height);
@@ -860,7 +926,7 @@ function showTrendTooltip(event) {
   trendTooltip.innerHTML = `
     <strong>${hit.month}월 ${escapeHtml(hit.accountName)}</strong>
     <span>${formatWon(hit.value)}</span>
-    <span>비중 ${formatPercent(hit.percent)}</span>
+    <span>비중 (${formatPercent(hit.percent)})</span>
   `;
   trendTooltip.classList.remove("hidden");
   trendTooltip.style.left = `${event.clientX + 14}px`;
@@ -869,6 +935,42 @@ function showTrendTooltip(event) {
 
 function hideTrendTooltip() {
   trendTooltip.classList.add("hidden");
+}
+
+function showAllocationTooltip(event) {
+  const rect = allocationChart.getBoundingClientRect();
+  const scaleX = allocationChart.width / rect.width;
+  const scaleY = allocationChart.height / rect.height;
+  const x = (event.clientX - rect.left) * scaleX - 140;
+  const y = (event.clientY - rect.top) * scaleY - 140;
+  const distance = Math.sqrt(x * x + y * y);
+
+  if (distance < 64 || distance > 116) {
+    hideAllocationTooltip();
+    return;
+  }
+
+  let angle = Math.atan2(y, x);
+  if (angle < -Math.PI / 2) angle += Math.PI * 2;
+  const hit = allocationHitAreas.find((area) => angle >= area.start && angle <= area.end);
+
+  if (!hit) {
+    hideAllocationTooltip();
+    return;
+  }
+
+  allocationTooltip.innerHTML = `
+    <strong>${escapeHtml(hit.accountName)}</strong>
+    <span>${formatWon(hit.value)}</span>
+    <span>비중 (${formatPercent(hit.percent)})</span>
+  `;
+  allocationTooltip.classList.remove("hidden");
+  allocationTooltip.style.left = `${event.clientX + 14}px`;
+  allocationTooltip.style.top = `${event.clientY + 14}px`;
+}
+
+function hideAllocationTooltip() {
+  allocationTooltip.classList.add("hidden");
 }
 
 function getProfit(account) {

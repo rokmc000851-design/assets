@@ -60,6 +60,7 @@
             <canvas id="allocationChart" width="280" height="280" aria-label="자산 비중 차트"></canvas>
             <div id="allocationLegend" class="legend"></div>
           </div>
+          <div id="allocationTooltip" class="chart-tooltip hidden" role="status"></div>
         </section>
 
         <section class="panel trend-panel" aria-labelledby="trendTitle">
@@ -128,31 +129,53 @@
           </div>
           <strong id="livingSelectedMonth" class="subtle"></strong>
         </div>
-        <div class="living-grid">
-          <label>
-            식비
-            <input id="livingFoodInput" class="number-input living-input" data-living-field="food" type="text" inputmode="numeric" placeholder="₩0" />
-          </label>
-          <label>
-            생활비
-            <input id="livingCostInput" class="number-input living-input" data-living-field="living" type="text" inputmode="numeric" placeholder="₩0" />
-          </label>
-          <label>
-            기타
-            <input id="livingOtherInput" class="number-input living-input" data-living-field="other" type="text" inputmode="numeric" placeholder="₩0" />
-          </label>
-          <article class="living-total">
-            <span>총합</span>
-            <strong id="livingTotal">₩0</strong>
-          </article>
-          <label>
-            한국 월수입
-            <input id="koreanIncomeInput" class="number-input living-input" data-living-field="koreanIncome" type="text" inputmode="numeric" placeholder="₩0" />
-          </label>
-          <label>
-            카드값
-            <input id="cardPaymentInput" class="number-input living-input" data-living-field="cardPayment" type="text" inputmode="numeric" placeholder="₩0" />
-          </label>
+        <div class="living-groups">
+          <section class="living-group" aria-labelledby="canadaLivingGroupTitle">
+            <h3 id="canadaLivingGroupTitle">캐나다 생활비</h3>
+            <div class="living-grid canada-living-grid">
+              <label>
+                식비
+                <input id="livingFoodInput" class="number-input living-input" data-living-field="food" type="text" inputmode="numeric" placeholder="₩0" />
+              </label>
+              <label>
+                생활비
+                <input id="livingCostInput" class="number-input living-input" data-living-field="living" type="text" inputmode="numeric" placeholder="₩0" />
+              </label>
+              <label>
+                기타
+                <input id="livingOtherInput" class="number-input living-input" data-living-field="other" type="text" inputmode="numeric" placeholder="₩0" />
+              </label>
+              <article class="living-total">
+                <span>월 총합</span>
+                <strong id="livingTotal">₩0</strong>
+              </article>
+              <article class="living-total">
+                <span>연누적 총합</span>
+                <strong id="canadaLivingYtd">₩0</strong>
+              </article>
+            </div>
+          </section>
+          <section class="living-group" aria-labelledby="koreaLivingGroupTitle">
+            <h3 id="koreaLivingGroupTitle">한국 월수입 / 카드값</h3>
+            <div class="living-grid">
+              <label>
+                한국 월수입
+                <input id="koreanIncomeInput" class="number-input living-input" data-living-field="koreanIncome" type="text" inputmode="numeric" placeholder="₩0" />
+              </label>
+              <label>
+                카드값
+                <input id="cardPaymentInput" class="number-input living-input" data-living-field="cardPayment" type="text" inputmode="numeric" placeholder="₩0" />
+              </label>
+              <article class="living-total">
+                <span>연누적 월수입</span>
+                <strong id="koreanIncomeYtd">₩0</strong>
+              </article>
+              <article class="living-total">
+                <span>연누적 카드값</span>
+                <strong id="cardPaymentYtd">₩0</strong>
+              </article>
+            </div>
+          </section>
         </div>
         <div class="living-charts">
           <section class="living-chart-panel" aria-labelledby="canadaLivingChartTitle">
@@ -210,38 +233,23 @@
         </form>
       </section>
 
-      <section class="backup-section" aria-labelledby="backupTitle">
-        <div class="section-heading">
-          <div>
-            <h2 id="backupTitle">백업 / 복원</h2>
-            <p class="section-note">CSV로 현재 데이터를 저장하거나, 이전에 저장한 CSV를 다시 불러옵니다.</p>
-          </div>
-          <div class="backup-actions">
-            <button id="backupCsvBtn" class="secondary-button" type="button">CSV 저장</button>
-            <label class="file-button">
-              CSV 불러오기
-              <input id="restoreCsvInput" type="file" accept=".csv,text/csv" />
-            </label>
+      <section class="sync-section" aria-labelledby="syncTitle">
+        <div>
+          <h2 id="syncTitle">Google Sheets 동기화</h2>
+          <p class="section-note">Google Apps Script 웹앱 주소를 저장하면 여러 기기에서 같은 시트 데이터를 불러오고 저장할 수 있습니다.</p>
+        </div>
+        <div class="sheet-sync-controls">
+          <label>
+            웹앱 주소
+            <input id="sheetsWebAppUrl" type="url" placeholder="https://script.google.com/macros/s/..." />
+          </label>
+          <div class="sheet-sync-actions">
+            <button id="saveSheetsUrlBtn" class="secondary-button" type="button">주소 저장</button>
+            <button id="pullSheetsBtn" class="secondary-button" type="button">시트에서 불러오기</button>
+            <button id="pushSheetsBtn" class="primary-button" type="button">시트로 저장</button>
           </div>
         </div>
-        <div class="sheet-sync">
-          <div>
-            <h3>Google Sheets 동기화</h3>
-            <p class="section-note">Google Apps Script 웹앱 주소를 저장하면 여러 기기에서 같은 시트 데이터를 불러오고 저장할 수 있습니다.</p>
-          </div>
-          <div class="sheet-sync-controls">
-            <label>
-              웹앱 주소
-              <input id="sheetsWebAppUrl" type="url" placeholder="https://script.google.com/macros/s/..." />
-            </label>
-            <div class="sheet-sync-actions">
-              <button id="saveSheetsUrlBtn" class="secondary-button" type="button">주소 저장</button>
-              <button id="pullSheetsBtn" class="secondary-button" type="button">시트에서 불러오기</button>
-              <button id="pushSheetsBtn" class="primary-button" type="button">시트로 저장</button>
-            </div>
-          </div>
-          <p id="sheetsSyncStatus" class="sync-status" aria-live="polite"></p>
-        </div>
+        <p id="sheetsSyncStatus" class="sync-status" aria-live="polite"></p>
       </section>
 
     </main>
