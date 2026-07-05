@@ -67,6 +67,8 @@ let allocationHitAreas = [];
 
 const yearTabs = document.querySelector("#yearTabs");
 const monthTabs = document.querySelector("#monthTabs");
+const livingYearTabs = document.querySelector("#livingYearTabs");
+const livingMonthTabs = document.querySelector("#livingMonthTabs");
 const ledgerBody = document.querySelector("#ledgerBody");
 const allocationChart = document.querySelector("#allocationChart");
 const trendChart = document.querySelector("#trendChart");
@@ -334,7 +336,13 @@ function render() {
 
 function renderYearTabs() {
   document.querySelector("#yearEyebrow").textContent = `${currentYear().year} Portfolio Ledger`;
-  yearTabs.innerHTML = state.years
+  renderYearTabGroup(yearTabs);
+  renderYearTabGroup(livingYearTabs);
+}
+
+function renderYearTabGroup(container) {
+  if (!container) return;
+  container.innerHTML = state.years
     .map(
       (year, index) => `
         <button class="year-tab ${index === activeYearIndex ? "active" : ""}" type="button" data-year-index="${index}">
@@ -344,7 +352,7 @@ function renderYearTabs() {
     )
     .join("");
 
-  yearTabs.querySelectorAll("[data-year-index]").forEach((button) => {
+  container.querySelectorAll("[data-year-index]").forEach((button) => {
     button.addEventListener("click", () => {
       activeYearIndex = Number(button.dataset.yearIndex);
       activeMonthIndex = Math.min(getLastUpdatedMonthIndex(currentYear()), MONTH_COUNT - 1);
@@ -354,8 +362,14 @@ function renderYearTabs() {
 }
 
 function renderMonthTabs() {
+  renderMonthTabGroup(monthTabs);
+  renderMonthTabGroup(livingMonthTabs);
+}
+
+function renderMonthTabGroup(container) {
+  if (!container) return;
   const lastUpdatedIndex = getLastUpdatedMonthIndex(currentYear());
-  monthTabs.innerHTML = currentYear().months
+  container.innerHTML = currentYear().months
     .map((month, index) => {
       const status = index <= lastUpdatedIndex ? "" : "future";
       return `
@@ -366,7 +380,7 @@ function renderMonthTabs() {
     })
     .join("");
 
-  monthTabs.querySelectorAll("[data-month-index]").forEach((button) => {
+  container.querySelectorAll("[data-month-index]").forEach((button) => {
     button.addEventListener("click", () => {
       activeMonthIndex = Number(button.dataset.monthIndex);
       saveAndRender();
@@ -538,6 +552,14 @@ function drawLivingStackedChart(ctx, canvas, months, series, options = {}) {
     if (!grossTotal) {
       ctx.fillStyle = "#edf2f0";
       ctx.fillRect(x, zeroY - 2, barWidth, 4);
+    }
+
+    if (index === activeMonthIndex) {
+      const y = grossTotal ? Math.min(positiveY, zeroY) : zeroY - 2;
+      const h = grossTotal ? Math.max(negativeY, zeroY) - y : 4;
+      ctx.strokeStyle = "#17211d";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x - 2, y - 2, barWidth + 4, h + 4);
     }
 
     ctx.fillStyle = "#52615c";
@@ -785,6 +807,13 @@ function renderTrendChart() {
         drawStackLabel(x, negativeY, barWidth, segmentHeight, value, percent);
         negativeY += segmentHeight;
       });
+
+      const netTotal = stack.positiveTotal + stack.negativeTotal;
+      trendCtx.fillStyle = netTotal < 0 ? debtColor : "#17211d";
+      trendCtx.font = "700 11px Segoe UI, sans-serif";
+      trendCtx.textAlign = "center";
+      const totalLabelY = stack.positiveTotal > 0 ? Math.max(12, positiveY - 7) : Math.min(height - bottom + 14, negativeY + 13);
+      trendCtx.fillText(formatEok(netTotal), x + barWidth / 2, totalLabelY);
 
       if (monthIndex === activeMonthIndex) {
         const y = Math.min(positiveY, zeroY);
