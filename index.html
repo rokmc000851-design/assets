@@ -28,6 +28,10 @@
           <span id="principalMetricLabel">총 원금</span>
           <strong id="totalPrincipal">0원</strong>
         </article>
+        <article class="metric">
+          <span id="adjustedPrincipalMetricLabel">입출금반영 원금</span>
+          <strong id="totalAdjustedPrincipal">0원</strong>
+        </article>
         <article class="metric net">
           <span id="valuationMetricLabel">총 평가금</span>
           <strong id="totalValuation">0원</strong>
@@ -85,7 +89,7 @@
         <div class="section-heading">
           <div>
             <h2 id="ledgerTitle">월별 자산현황표</h2>
-            <p class="section-note">원금, 평가금, 입출금을 수정하면 평가손익과 수익률이 자동 계산됩니다.</p>
+            <p class="section-note">원금, 입출금, 평가금을 수정하면 입출금반영 원금 기준으로 평가손익과 수익률이 자동 계산됩니다.</p>
           </div>
           <button id="addAccountBtn" class="secondary-button" type="button">계좌 추가</button>
         </div>
@@ -96,11 +100,13 @@
                 <th>구분</th>
                 <th>분류</th>
                 <th>원금</th>
+                <th>입출금반영 원금</th>
                 <th>평가금</th>
                 <th>평가손익</th>
                 <th>수익률</th>
                 <th>연간수익</th>
                 <th>입출금</th>
+                <th>순서</th>
                 <th></th>
               </tr>
             </thead>
@@ -109,11 +115,13 @@
               <tr>
                 <th colspan="2">합계</th>
                 <th id="footerPrincipal">0원</th>
+                <th id="footerAdjustedPrincipal">0원</th>
                 <th id="footerValuation">0원</th>
                 <th id="footerProfit">0원</th>
                 <th id="footerReturn">0%</th>
                 <th id="footerYtd">0원</th>
                 <th id="footerCashflow">0원</th>
+                <th></th>
                 <th></th>
               </tr>
             </tfoot>

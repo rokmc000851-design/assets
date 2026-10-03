@@ -200,6 +200,14 @@ ledgerBody.addEventListener("focusout", (event) => {
 });
 
 ledgerBody.addEventListener("click", (event) => {
+  const orderButton = event.target.closest("[data-order-index]");
+  if (orderButton) {
+    pushUndoState();
+    reorderAccount(Number(orderButton.dataset.orderIndex), orderButton.dataset.orderDirection);
+    saveAndRender();
+    return;
+  }
+
   const button = event.target.closest("[data-delete-index]");
   if (!button) return;
   pushUndoState();
@@ -393,8 +401,10 @@ function renderSummary() {
   const monthLabel = `${currentMonth().month}월`;
   document.querySelector("#selectedMonthLabel").textContent = `${currentYear().year}년 ${monthLabel}`;
   document.querySelector("#principalMetricLabel").textContent = `${monthLabel}초 원금`;
+  document.querySelector("#adjustedPrincipalMetricLabel").textContent = `${monthLabel} 입출금반영 원금`;
   document.querySelector("#valuationMetricLabel").textContent = `${monthLabel}말 총 금액`;
   document.querySelector("#totalPrincipal").textContent = formatWon(totals.principal);
+  document.querySelector("#totalAdjustedPrincipal").textContent = formatWon(totals.adjustedPrincipal);
   document.querySelector("#totalValuation").textContent = formatWon(totals.valuation);
   setSignedText("#totalProfit", totals.profit, formatWon(totals.profit));
   setSignedText("#totalReturn", totals.returnRate, formatPercent(totals.returnRate));
@@ -407,7 +417,7 @@ function renderLedger() {
   if (!month.accounts.length) {
     ledgerBody.innerHTML = `
       <tr>
-        <td colspan="9" class="empty-row">아직 업데이트되지 않은 월입니다. "다음 업데이트 월 추가" 또는 "계좌 추가"로 시작하세요.</td>
+        <td colspan="11" class="empty-row">아직 업데이트되지 않은 월입니다. "다음 업데이트 월 추가" 또는 "계좌 추가"로 시작하세요.</td>
       </tr>
     `;
   } else {
@@ -416,6 +426,7 @@ function renderLedger() {
         const profit = getProfit(account);
         const rate = getReturnRate(account);
         const ytd = calculateAccountYtd(account.name, activeMonthIndex);
+        const adjustedPrincipal = getAdjustedPrincipal(account);
         return `
           <tr>
             <td><input data-field="name" data-index="${index}" value="${escapeAttribute(account.name)}" aria-label="구분" /></td>
@@ -425,11 +436,18 @@ function renderLedger() {
               </select>
             </td>
             <td><input class="number-input money-input" data-field="principal" data-index="${index}" type="text" inputmode="numeric" value="${formatMoneyInput(account.principal)}" aria-label="원금" /></td>
+            <td class="amount">${formatWon(adjustedPrincipal)}</td>
             <td><input class="number-input money-input" data-field="valuation" data-index="${index}" type="text" inputmode="numeric" value="${formatMoneyInput(account.valuation)}" aria-label="평가금" /></td>
             <td class="amount ${getSignedClass(profit)}">${formatWon(profit)}</td>
             <td class="amount ${getSignedClass(rate)}">${formatPercent(rate)}</td>
             <td class="amount ${getSignedClass(ytd)}">${formatWon(ytd)}</td>
             <td><input class="number-input money-input ${getSignedClass(account.cashflow)}" data-field="cashflow" data-index="${index}" type="text" inputmode="numeric" value="${formatMoneyInput(account.cashflow)}" aria-label="입출금" /></td>
+            <td>
+              <div class="order-controls">
+                <button class="order-button" type="button" data-order-index="${index}" data-order-direction="up" title="위로" aria-label="위로" ${index === 0 ? "disabled" : ""}>↑</button>
+                <button class="order-button" type="button" data-order-index="${index}" data-order-direction="down" title="아래로" aria-label="아래로" ${index === month.accounts.length - 1 ? "disabled" : ""}>↓</button>
+              </div>
+            </td>
             <td><button class="delete-button" type="button" data-delete-index="${index}" title="삭제" aria-label="삭제">×</button></td>
           </tr>
         `;
@@ -439,6 +457,7 @@ function renderLedger() {
 
   const totals = calculateMonthTotals(month);
   document.querySelector("#footerPrincipal").textContent = formatWon(totals.principal);
+  document.querySelector("#footerAdjustedPrincipal").textContent = formatWon(totals.adjustedPrincipal);
   document.querySelector("#footerValuation").textContent = formatWon(totals.valuation);
   setSignedText("#footerProfit", totals.profit, formatWon(totals.profit));
   setSignedText("#footerReturn", totals.returnRate, formatPercent(totals.returnRate));
@@ -890,15 +909,17 @@ function drawStackLabel(x, y, width, height, value, percent) {
 
 function calculateMonthTotals(month) {
   const principal = month.accounts.reduce((sum, account) => sum + toNumber(account.principal), 0);
+  const adjustedPrincipal = month.accounts.reduce((sum, account) => sum + getAdjustedPrincipal(account), 0);
   const valuation = month.accounts.reduce((sum, account) => sum + toNumber(account.valuation), 0);
   const cashflow = month.accounts.reduce((sum, account) => sum + toNumber(account.cashflow), 0);
-  const profit = valuation - principal;
+  const profit = valuation - adjustedPrincipal;
   return {
     principal,
+    adjustedPrincipal,
     valuation,
     cashflow,
     profit,
-    returnRate: principal ? profit / principal : 0,
+    returnRate: adjustedPrincipal ? profit / adjustedPrincipal : 0,
   };
 }
 
@@ -931,12 +952,46 @@ function getAccountColorIndex(accountName) {
 }
 
 function getAllAccountNames() {
-  return Array.from(new Set(state.years.flatMap((year) => year.months.flatMap((month) => month.accounts.map((account) => account.name)))));
+  const currentNames = currentMonth().accounts.map((account) => account.name);
+  const allNames = state.years.flatMap((year) => year.months.flatMap((month) => month.accounts.map((account) => account.name)));
+  return Array.from(new Set([...currentNames, ...allNames]));
 }
 
 function getTrendAccounts(accounts) {
-  if (activeTrendAccount === ALL_TREND_ACCOUNTS) return accounts;
-  return accounts.filter((account) => account.name === activeTrendAccount);
+  const filtered = activeTrendAccount === ALL_TREND_ACCOUNTS ? accounts : accounts.filter((account) => account.name === activeTrendAccount);
+  return sortAccountsByCurrentOrder(filtered);
+}
+
+function sortAccountsByCurrentOrder(accounts) {
+  const order = currentMonth().accounts.map((account) => account.name);
+  return [...accounts].sort((a, b) => {
+    const aIndex = order.indexOf(a.name);
+    const bIndex = order.indexOf(b.name);
+    const safeA = aIndex < 0 ? Number.MAX_SAFE_INTEGER : aIndex;
+    const safeB = bIndex < 0 ? Number.MAX_SAFE_INTEGER : bIndex;
+    return safeA - safeB;
+  });
+}
+
+function reorderAccount(index, direction) {
+  const accounts = currentMonth().accounts;
+  const targetIndex = direction === "up" ? index - 1 : index + 1;
+  if (targetIndex < 0 || targetIndex >= accounts.length) return;
+
+  const nextOrder = accounts.map((account) => account.name);
+  [nextOrder[index], nextOrder[targetIndex]] = [nextOrder[targetIndex], nextOrder[index]];
+  applyAccountOrderToCurrentYear(nextOrder);
+}
+
+function applyAccountOrderToCurrentYear(order) {
+  const orderIndex = new Map(order.map((name, index) => [name, index]));
+  currentYear().months.forEach((month) => {
+    month.accounts.sort((a, b) => {
+      const aIndex = orderIndex.has(a.name) ? orderIndex.get(a.name) : Number.MAX_SAFE_INTEGER;
+      const bIndex = orderIndex.has(b.name) ? orderIndex.get(b.name) : Number.MAX_SAFE_INTEGER;
+      return aIndex - bIndex;
+    });
+  });
 }
 
 function showTrendTooltip(event) {
@@ -1002,13 +1057,17 @@ function hideAllocationTooltip() {
   allocationTooltip.classList.add("hidden");
 }
 
+function getAdjustedPrincipal(account) {
+  return toNumber(account.principal) + toNumber(account.cashflow);
+}
+
 function getProfit(account) {
-  return toNumber(account.valuation) - toNumber(account.principal);
+  return toNumber(account.valuation) - getAdjustedPrincipal(account);
 }
 
 function getReturnRate(account) {
-  const principal = toNumber(account.principal);
-  return principal ? getProfit(account) / principal : 0;
+  const adjustedPrincipal = getAdjustedPrincipal(account);
+  return adjustedPrincipal ? getProfit(account) / adjustedPrincipal : 0;
 }
 
 function getSignedClass(value) {
@@ -1027,7 +1086,7 @@ function setSignedText(selector, value, text) {
 }
 
 function getExportRows() {
-  const rows = [["연도", "월", "구분", "분류", "원금", "평가금", "평가손익", "수익률", "연간수익", "입출금", "데이터구분"]];
+  const rows = [["연도", "월", "구분", "분류", "원금", "입출금반영 원금", "평가금", "평가손익", "수익률", "연간수익", "입출금", "데이터구분"]];
   state.years.forEach((year) => {
     year.months.forEach((month, monthIndex) => {
       month.accounts.forEach((account) => {
@@ -1037,6 +1096,7 @@ function getExportRows() {
           account.name,
           account.type,
           toNumber(account.principal),
+          getAdjustedPrincipal(account),
           toNumber(account.valuation),
           getProfit(account),
           getReturnRate(account),
@@ -1056,7 +1116,7 @@ function getExportRows() {
         ["한국 월수입", living.koreanIncome],
         ["카드값", living.cardPayment],
       ].forEach(([name, value]) => {
-        rows.push([year.year, month.month, name, "생활비", 0, toNumber(value), 0, 0, 0, 0, "생활비"]);
+        rows.push([year.year, month.month, name, "생활비", 0, 0, toNumber(value), 0, 0, 0, 0, "생활비"]);
       });
     });
   });

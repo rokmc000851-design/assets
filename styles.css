@@ -170,7 +170,7 @@ h2 {
 
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 18px;
 }
@@ -328,7 +328,7 @@ h2 {
 
 table {
   width: 100%;
-  min-width: 1080px;
+  min-width: 1260px;
   border-collapse: collapse;
 }
 
@@ -394,6 +394,24 @@ select {
   color: var(--coral);
   font-size: 18px;
   line-height: 1;
+}
+
+.order-controls {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+
+.order-button {
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--green-dark);
+  font-weight: 800;
 }
 
 .entry-form {
